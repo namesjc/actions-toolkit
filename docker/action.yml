@@ -39,7 +39,7 @@ inputs:
   dockerhub-server:
     description: "Server of DockerHub."
     required: false
-    default: "app-int-dep-docker-local.rb-artifactory.bosch.com"
+    default: "https://index.docker.io/v1/"
   dockerhub-user:
     description: "User of DockerHub."
     required: false
