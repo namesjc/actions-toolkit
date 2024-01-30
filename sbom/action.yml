@@ -1,0 +1,77 @@
+name: 'Generate SBOM'
+description: 'Generate SBOM from an oci images'
+inputs:
+  images:
+    description: "Full image paths to generate SBOMs for."
+    required: false
+    default: ""
+  scan-target:
+    description: "Scan-Target for Syft."
+    required: false
+    default: ""
+  format:
+    description: "SBOM format (json, text, cyclonedx, cyclonedx-json, spdx, spdx-json, table)"
+    required: true
+    default: "json"
+  output:
+    description: "Output file"
+    required: true
+    default: "oci-sbom.json"
+  sign:
+    description: "Sign SBOM with cosign"
+    required: false
+    default: 'false'
+  attest:
+    description: "Attest the images with the generated SBOMs"
+    required: false
+    default: 'false'
+  verify:
+    description: "Verify SBOM with cosign"
+    required: false
+    default: 'false'
+  cosign-repository:
+    description: Custom cosign-repository
+    required: false
+    default: ""
+runs:
+  using: "composite"
+  steps:
+    - name: Generate SBOM
+      if: ${{ inputs.images != '' }}
+      run: |
+        NAME=$(echo "${{ inputs.images }}" | head -n1)
+        syft $NAME -o ${{ inputs.format }} | jq --compact-output > ${{ inputs.output }}
+      shell: sh
+
+    - name: Generate SBOM
+      if: ${{ inputs.scan-target != '' }}
+      run: |
+        syft ${{ inputs.scan-target }} -o ${{ inputs.format }} | jq --compact-output > ${{ inputs.output }}
+      shell: sh
+
+    - name: Sign SBOM
+      if: ${{ inputs.sign == 'true' }}
+      run: cosign sign-blob -y --output-signature ${{ inputs.output }}.sig --output-certificate ${{ inputs.output }}.pem ${{ inputs.output }}
+      shell: sh
+      env:
+        COSIGN_REPOSITORY: ${{ inputs.cosign-repository }}
+
+    #- name: Verify SBOM
+    #  if: ${{ inputs.verify == 'true' }}
+    # TODO:
+    #  run: cosign verify-blob --signature ${{ inputs.output }}.sig --certificate ${{ inputs.output }}.pem ${{ inputs.output }}
+    #  shell: sh
+    #  env:
+    #    COSIGN_REPOSITORY: ${{ inputs.cosign-repository }}
+
+    - name: Attest images with SBOM
+      if: ${{ inputs.attest == 'true' && inputs.images != '' }}
+      run: |
+        echo "${{ inputs.images }}" | grep -v "^$" | while read -r a; 
+        do 
+          cosign attest -y --type spdx --predicate ${{ inputs.output }} $a;
+          cosign attach sbom --type syft --sbom ${{ inputs.output }} $a;
+        done
+      shell: sh
+      env:
+        COSIGN_REPOSITORY: ${{ inputs.cosign-repository }}

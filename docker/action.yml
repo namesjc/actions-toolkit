@@ -1,0 +1,104 @@
+name: "Docker image creation"
+description: "Build, push and sign docker images"
+inputs:
+  github-token:
+    description: "GitHub Token used to authenticate against a repository for Git context"
+    default: ${{ github.token }}
+    required: true
+  # docker params from docker/build-push-action
+  push:
+    description: "Push is a shorthand for --output=type=registry"
+    required: false
+    default: "false"
+  platforms:
+    description: "List of target platforms for build"
+    required: false
+  context:
+    description: "Build's context is the set of files located in the specified PATH or URL"
+    required: false
+  file:
+    description: "Path to the Dockerfile"
+    required: false
+  labels:
+    description: "List of metadata for an image"
+    required: false
+  load:
+    description: "Load is a shorthand for --output=type=docker"
+    required: false
+    default: "false"
+  build-args:
+    description: "List of build-time variables"
+    required: false
+  tags:
+    description: "List of tags"
+    required: true
+  # registry-auth parameters
+  ghcr-password:
+    description: "Password of ghcr.io."
+    required: false
+  dockerhub-server:
+    description: "Server of DockerHub."
+    required: false
+    default: "app-int-dep-docker-local.rb-artifactory.bosch.com"
+  dockerhub-user:
+    description: "User of DockerHub."
+    required: false
+  dockerhub-password:
+    description: "Password of DockerHub."
+    required: false
+  # signing parameters
+  sign:
+    description: "Sign image with cosign"
+    required: false
+    default: "false"
+  verify:
+    description: "Verify image with cosign"
+    required: false
+    default: "false"
+  cosign-repository:
+    description: Custom cosign-repository
+    required: false
+    default: ""
+runs:
+  using: "composite"
+  steps:
+    - name: Set up QEMU
+      id: qemu
+      uses: docker/setup-qemu-action@5306bad0baa6b616b9934712d4eba8da2112606d
+
+    - name: Set up Docker Buildx
+      id: buildx
+      uses: docker/setup-buildx-action@edfb0fe6204400c56fbfd3feba3fe9ad1adfa345
+
+    - name: Docker Login
+      if: ${{ inputs.dockerhub-password }}
+      run: docker login -u ${{ inputs.dockerhub-user }} -p ${{ inputs.dockerhub-password }} ${{ inputs.dockerhub-server }}
+      shell: sh
+
+    - name: Build image
+      uses: docker/build-push-action@9f6f8c940b91232557f8699b21341a08624a8dce
+      with:
+        github-token: ${{ inputs.github-token }}
+        push: ${{ inputs.push }}
+        platforms: ${{ inputs.platforms }}
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        labels: ${{ inputs.labels }}
+        load: ${{ inputs.load }}
+        build-args: ${{ inputs.build-args }}
+        tags: ${{ inputs.tags }}
+
+    - name: Sign image
+      if: ${{ inputs.sign == 'true' }}
+      run: echo "${{ inputs.tags }}" | grep -v "^$" | while read -r a; do cosign sign -y -r $a; done
+      shell: sh
+      env:
+        COSIGN_REPOSITORY: ${{ inputs.cosign-repository }}
+
+    #- name: Verify image
+    #  if: ${{ inputs.verify == 'true' }}
+    #  # TODO:
+    #  run: echo "${{ inputs.tags }}" | grep -v "^$" | while read -r a; do cosign verify --certificate-identity TODO --certificate-oidc-issuer https://token.actions.githubusercontent.com $a; done
+    #  shell: sh
+    #  env:
+    #    COSIGN_REPOSITORY: ${{ inputs.cosign-repository }}

@@ -1,0 +1,183 @@
+name: Release GoReleaser
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: false
+        default: main
+        type: string
+      go-version:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      goreleaser-args:
+        required: false
+        type: string
+        default: "--skip-validate"
+      goreleaser-version:
+        required: false
+        type: string
+        default: v1.22.1
+      docker-tags:
+        required: true
+        type: string
+      docker-platforms:
+        required: false
+        default: linux/amd64
+        type: string
+      sign:
+        required: false
+        default: true
+        type: boolean
+      verify:
+        required: false
+        default: true
+        type: boolean
+      attest:
+        required: false
+        default: true
+        type: boolean
+      sbom:
+        required: false
+        default: true
+        type: boolean
+      cosign-repository:
+        required: false
+        default: ""
+        type: string
+    secrets:
+      token:
+        required: true
+      pat:
+        required: true
+      dockerhub-user:
+        required: false
+      dockerhub-password:
+        required: false
+
+permissions:
+  id-token: write
+  contents: write
+  packages: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.pat }}
+
+      - name: Setup Go
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Setup Cosign
+        if: ${{ inputs.sign == true }}
+        uses: sigstore/cosign-installer@b18d21aaa20ef40c4e681202a598b7591d5be577
+        with:
+          cosign-release: "v2.2.1"
+
+      - name: Setup Syft
+        uses: cje5szh/actions-toolkit/setup-syft@0.0.3
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@14707cd26fbb4b6c8abf03fb8ea4eb6c59711a62
+        with:
+          version: ${{ inputs.goreleaser-version }}
+          args: release --clean ${{ inputs.goreleaser-args }}
+        env:
+          GORELEASER_CURRENT_TAG: ${{ inputs.version }}
+          GITHUB_TOKEN: ${{ secrets.token }}
+          COSIGN_REPOSITORY: ${{ inputs.cosign-repository }}
+
+      - name: Build and push image
+        uses: cje5szh/actions-toolkit/docker@0.0.3
+        with:
+          dockerhub-user: ${{ secrets.dockerhub-user }}
+          dockerhub-password: ${{ secrets.dockerhub-password }}
+          context: .
+          push: true
+          sign: ${{ inputs.sign }}
+          verify: ${{ inputs.verify }}
+          cosign-repository: ${{ inputs.cosign-repository }}
+          platforms: ${{ inputs.docker-platforms }}
+          tags: ${{ inputs.docker-tags }}
+
+      - name: Generate SBOM
+        if: ${{ inputs.sbom == true }}
+        uses: cje5szh/actions-toolkit/sbom@0.0.3
+        with:
+          images: ${{ inputs.docker-tags }}
+          sign: ${{ inputs.sign }}
+          verify: ${{ inputs.verify }}
+          attest: ${{ inputs.attest }}
+          cosign-repository: ${{ inputs.cosign-repository }}
+
+      - name: Generate hashes
+        shell: bash
+        id: hash
+        run: |
+          cd dist/
+          echo "hashes=$(find . -type f | xargs sha256sum | base64 -w0)" >> $GITHUB_OUTPUT
+
+      - name: Upload assets
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8
+        with:
+          retention-days: 1
+          name: assets
+          path: |
+            dist/
+            oci-sbom.json*
+
+  release:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.pat }}
+
+      - name: Generate Changelog
+        uses: ckotzbauer/changelog-generator@520854c9599938d957b501226833a60c6f98d6ab
+        with:
+          release-version: ${{ inputs.version }}
+          github-handle: ${{ github.repository }}
+          commit-output: commits.md
+
+      - name: Download artifacts
+        uses: actions/download-artifact@bb3fa7fd35ab8113a980912eb9f59b846d14e3ff
+        with:
+          path: output
+
+      - name: Output
+        run: |
+          ls -R output
+
+      - name: Push release
+        uses: cje5szh/actions-toolkit/push-release@0.0.3
+        with:
+          version: ${{ inputs.version }}
+          branch: ${{ inputs.branch }}
+          pat: ${{ secrets.pat }}
+          prerelease: ${{ contains(inputs.version, 'alpha') || contains(inputs.version, 'beta') || contains(inputs.version, 'rc') }}
+          files: |
+            output/assets/dist/*.tar.gz
+            output/assets/dist/*.zip
+            output/assets/dist/*.txt
+            output/assets/dist/*.sig
+            output/assets/dist/*.sbom
+            output/assets/dist/*.pem
+            output/assets/oci-sbom.json*
+            output/multiple.intoto.jsonl/multiple.intoto.jsonl
