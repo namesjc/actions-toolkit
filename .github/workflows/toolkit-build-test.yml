@@ -110,7 +110,7 @@ jobs:
 
       - name: Setup Syft
         if: ${{ inputs.install-syft == true }}
-        uses: namesjc/actions-toolkit/setup-syft@0.0.1
+        uses: namesjc/actions-toolkit/setup-syft@0.0.2
 
       - name: Build
         if: ${{ inputs.build-commands != '' }}
@@ -132,7 +132,7 @@ jobs:
 
       - name: Build image
         if: ${{ inputs.build-image == true }}
-        uses: namesjc/actions-toolkit/docker@0.0.1
+        uses: namesjc/actions-toolkit/docker@0.0.2
         with:
           context: ${{ inputs.docker-context }}
           push: false
@@ -143,7 +143,7 @@ jobs:
 
       - name: Scan image
         if: ${{ inputs.scan-image == true }}
-        uses: namesjc/actions-toolkit/grype@0.0.1
+        uses: namesjc/actions-toolkit/grype@0.0.2
         with:
           scan-target: ${{ inputs.docker-tag }}
           fail-on: "medium"

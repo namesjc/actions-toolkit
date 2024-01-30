@@ -88,7 +88,7 @@ jobs:
           cosign-release: "v2.2.1"
 
       - name: Setup Syft
-        uses: namesjc/actions-toolkit/setup-syft@0.0.1
+        uses: namesjc/actions-toolkit/setup-syft@0.0.2
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@14707cd26fbb4b6c8abf03fb8ea4eb6c59711a62
@@ -101,7 +101,7 @@ jobs:
           COSIGN_REPOSITORY: ${{ inputs.cosign-repository }}
 
       - name: Build and push image
-        uses: namesjc/actions-toolkit/docker@0.0.1
+        uses: namesjc/actions-toolkit/docker@0.0.2
         with:
           dockerhub-user: ${{ secrets.dockerhub-user }}
           dockerhub-password: ${{ secrets.dockerhub-password }}
@@ -115,7 +115,7 @@ jobs:
 
       - name: Generate SBOM
         if: ${{ inputs.sbom == true }}
-        uses: namesjc/actions-toolkit/sbom@0.0.1
+        uses: namesjc/actions-toolkit/sbom@0.0.2
         with:
           images: ${{ inputs.docker-tags }}
           sign: ${{ inputs.sign }}
@@ -166,7 +166,7 @@ jobs:
           ls -R output
 
       - name: Push release
-        uses: namesjc/actions-toolkit/push-release@0.0.1
+        uses: namesjc/actions-toolkit/push-release@0.0.2
         with:
           version: ${{ inputs.version }}
           branch: ${{ inputs.branch }}
